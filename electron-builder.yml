@@ -1,0 +1,33 @@
+appId: com.liuyao.app
+productName: 六爻预测
+directories:
+  output: release/${version}
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - node_modules/**/*
+  - src/data/**
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  perMachine: false
+  deleteAppDataOnUninstall: false
+asar:
+  smartUnpack: true
+  extraResources:
+    - from: src/data
+      to: data
+      filter:
+        - **/*.{json,db}

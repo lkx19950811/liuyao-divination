@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(xargs -I {} taskkill //F //PID {})",
+      "Bash(electron .:*)",
+      "Bash(npx electron:*)",
+      "Bash(curl:*)",
+      "Bash(start:*)"
+    ]
+  }
+}
