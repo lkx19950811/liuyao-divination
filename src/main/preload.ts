@@ -229,7 +229,15 @@ const electronAPI = {
       ipcRenderer.removeListener('ai:downloadProgress', callback)
     },
     openDownloadPage: (useMirror: boolean) =>
-      ipcRenderer.invoke('ai:openDownloadPage', useMirror)
+      ipcRenderer.invoke('ai:openDownloadPage', useMirror),
+    pullModel: (modelName: string) =>
+      ipcRenderer.invoke('ai:pullModel', modelName),
+    onModelPullProgress: (callback: (_event: unknown, data: { output: string; progress?: number; type: string }) => void) => {
+      ipcRenderer.on('ai:modelPullProgress', callback)
+    },
+    removeModelPullProgressListener: (callback: (_event: unknown, data: { output: string; progress?: number; type: string }) => void) => {
+      ipcRenderer.removeListener('ai:modelPullProgress', callback)
+    }
   }
 }
 

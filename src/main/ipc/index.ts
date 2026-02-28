@@ -792,9 +792,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('ai:downloadOllama', async (event, useMirror: boolean) => {
     const mainWindow = BrowserWindow.fromWebContents(event.sender)
 
-    // 国内镜像源
+    // 国内镜像源 - 使用最新版本
     const mirrors = [
-      'https://gh-proxy.com/https://github.com/ollama/ollama/releases/download/v0.5.7/OllamaSetup.exe'
+      'https://gh-proxy.com/https://github.com/ollama/ollama/releases/download/v0.17.4/OllamaSetup.exe'
     ]
 
     const { filePath, canceled } = await dialog.showSaveDialog(mainWindow!, {
@@ -810,8 +810,8 @@ export function registerIpcHandlers(): void {
       return { success: false, message: '用户取消下载' }
     }
 
-    // 选择下载源
-    const downloadUrls = useMirror ? mirrors : ['https://ollama.com/download/OllamaSetup.exe']
+    // 选择下载源 - 官方也使用具体版本
+    const downloadUrls = useMirror ? mirrors : ['https://github.com/ollama/ollama/releases/download/v0.17.4/OllamaSetup.exe']
 
     return new Promise((resolve) => {
       let currentIndex = 0
@@ -944,6 +944,49 @@ export function registerIpcHandlers(): void {
       : 'https://ollama.com/download/windows'
     await shell.openExternal(url)
     return { success: true }
+  })
+
+  // 拉取模型（带进度）
+  ipcMain.handle('ai:pullModel', async (event, modelName: string) => {
+    return new Promise((resolve) => {
+      const pullProcess = spawn('ollama', ['pull', modelName], {
+        windowsHide: true
+      })
+
+      let lastProgress = ''
+
+      pullProcess.stdout.on('data', (data: Buffer) => {
+        const output = data.toString()
+        event.sender.send('ai:modelPullProgress', { output, type: 'stdout' })
+        
+        // 解析进度信息
+        const progressMatch = output.match(/(\d+)%/g)
+        if (progressMatch) {
+          lastProgress = progressMatch[progressMatch.length - 1]
+          event.sender.send('ai:modelPullProgress', { 
+            output, 
+            progress: parseInt(lastProgress),
+            type: 'progress' 
+          })
+        }
+      })
+
+      pullProcess.stderr.on('data', (data: Buffer) => {
+        event.sender.send('ai:modelPullProgress', { output: data.toString(), type: 'stderr' })
+      })
+
+      pullProcess.on('close', (code: number) => {
+        if (code === 0) {
+          resolve({ success: true, message: '模型下载完成' })
+        } else {
+          resolve({ success: false, message: `下载失败，退出码: ${code}` })
+        }
+      })
+
+      pullProcess.on('error', (err: Error) => {
+        resolve({ success: false, message: `下载失败: ${err.message}` })
+      })
+    })
   })
 }
 

@@ -159,6 +159,9 @@ declare global {
         onDownloadProgress: (callback: (_event: unknown, data: { progress: number; downloadedSize: number; totalSize: number; message?: string }) => void) => void
         removeDownloadProgressListener: (callback: (_event: unknown, data: { progress: number; downloadedSize: number; totalSize: number; message?: string }) => void) => void
         openDownloadPage: (useMirror: boolean) => Promise<{ success: boolean }>
+        pullModel: (modelName: string) => Promise<{ success: boolean; message: string }>
+        onModelPullProgress: (callback: (_event: unknown, data: { output: string; progress?: number; type: string }) => void) => void
+        removeModelPullProgressListener: (callback: (_event: unknown, data: { output: string; progress?: number; type: string }) => void) => void
       }
     }
   }

@@ -146,6 +146,20 @@
               <div class="step-content">
                 <div class="step-title">{{ availableModels.length > 0 ? '已安装模型' : '下载模型' }}</div>
                 <div v-if="availableModels.length === 0" class="step-action">
+                  <el-button type="primary" @click="pullModel" :loading="pullingModel" style="margin-bottom: 12px;">
+                    一键下载推荐模型
+                  </el-button>
+                  <div v-if="pullProgress > 0" style="margin-bottom: 12px;">
+                    <el-progress :percentage="pullProgress" :status="pullProgress === 100 ? 'success' : ''" />
+                    <div class="pull-output">{{ pullOutput }}</div>
+                  </div>
+                  <div class="step-hint" style="margin-bottom: 8px;">或手动下载其他模型：</div>
+                  <el-select v-model="selectedMirror" placeholder="选择模型镜像源" style="width: 280px; margin-bottom: 8px;">
+                    <el-option label="魔塔社区（推荐）" value="modelscope" />
+                    <el-option label="HF国内镜像" value="hf-mirror" />
+                    <el-option label="DaoCloud镜像" value="daocloud" />
+                    <el-option label="默认（国外）" value="" />
+                  </el-select>
                   <code class="command-code">{{ modelCommand }}</code>
                   <el-button type="success" size="small" @click="copyCommand(modelCommand)">
                     复制
@@ -156,7 +170,7 @@
                     {{ model.name }}
                   </el-tag>
                 </div>
-                <div class="step-hint">模型大小约4.7GB，推荐使用qwen2.5系列</div>
+                <div class="step-hint">推荐模型：huihui_ai/gemma3-abliterated:latest</div>
               </div>
             </div>
           </div>
@@ -278,6 +292,9 @@ const downloadedFilePath = ref<string>('')
 const ollamaInstalled = ref(false)
 const ollamaVersion = ref('')
 const ollamaRunning = ref(false)
+const pullingModel = ref(false)
+const pullProgress = ref(0)
+const pullOutput = ref('')
 
 const modelCommand = computed(() => {
   switch (selectedMirror.value) {
@@ -446,6 +463,38 @@ function copyCommand(command: string) {
   })
 }
 
+async function pullModel() {
+  pullingModel.value = true
+  pullProgress.value = 0
+  pullOutput.value = '正在下载模型...'
+  
+  const modelName = 'huihui_ai/gemma3-abliterated:latest'
+  
+  window.electronAPI.ai.onModelPullProgress((_event, data) => {
+    if (data.progress !== undefined) {
+      pullProgress.value = data.progress
+    }
+    if (data.output) {
+      pullOutput.value = data.output
+    }
+  })
+  
+  try {
+    const result = await window.electronAPI.ai.pullModel(modelName)
+    if (result.success) {
+      ElMessage.success('模型下载完成')
+      await checkOllama()
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch (error) {
+    ElMessage.error('模型下载失败')
+  } finally {
+    window.electronAPI.ai.removeModelPullProgressListener(() => {})
+    pullingModel.value = false
+  }
+}
+
 async function clearHistory() {
   try {
     await ElMessageBox.confirm('确定要清空所有历史记录吗？此操作不可恢复！', '警告', {
@@ -598,6 +647,20 @@ onMounted(async () => {
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
+}
+
+.pull-output {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 8px;
+  max-height: 100px;
+  overflow-y: auto;
+  background: var(--el-fill-color-light);
+  padding: 8px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .install-footer {
