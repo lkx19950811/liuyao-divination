@@ -105,3 +105,7 @@ See [docs/](docs/) for detailed documentation.
 ## License
 
 For educational and research purposes only.
+
+## Author
+
+**KasonLee-marker** - [GitHub](https://github.com/lkx19950811)
