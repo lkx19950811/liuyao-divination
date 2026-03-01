@@ -68,6 +68,14 @@ See [docs/](docs/) for detailed documentation.
 
 ## Changelog
 
+### v1.2.4 (2026-03-01)
+- Added restart app feature for Ollama installation detection
+- Added mirror acceleration for model download
+- Fixed download progress lost when switching pages
+- Removed unnecessary popup notifications
+- Fixed TypeScript type errors
+- Persisted download state in global store
+
 ### v1.2.3 (2026-03-01)
 - Refactored AI settings UI with model management section
 - Added model download progress bar with clean output
