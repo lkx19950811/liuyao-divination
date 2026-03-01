@@ -14,6 +14,18 @@ export const useSettingsStore = defineStore('settings', () => {
   const aiSettings = ref<AISettings>(getDefaultAISettings())
   const ollamaConnected = ref(false)
   const availableModels = ref<OllamaModel[]>([])
+  
+  // 模型下载状态
+  const modelPulling = ref(false)
+  const modelPullProgress = ref(0)
+  const modelPullOutput = ref('')
+  let progressCallback: ((event: unknown, data: { progress?: number; output?: string }) => void) | null = null
+  
+  // Ollama 下载状态
+  const ollamaDownloading = ref(false)
+  const ollamaDownloadProgress = ref(0)
+  const ollamaDownloadedFilePath = ref('')
+  let downloadCallback: ((event: unknown, data: { progress: number; message?: string }) => void) | null = null
 
   const actualTheme = computed(() => {
     if (theme.value === 'system') {
@@ -151,6 +163,92 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSetting('aiMaxTokens', String(value))
   }
 
+  function setupProgressListener() {
+    if (progressCallback) return
+    
+    progressCallback = (_event: unknown, data: { progress?: number; output?: string }) => {
+      if (data.progress !== undefined) {
+        modelPullProgress.value = data.progress
+      }
+      if (data.output) {
+        modelPullOutput.value = data.output
+      }
+    }
+    window.electronAPI.ai.onModelPullProgress(progressCallback)
+  }
+
+  function removeProgressListener() {
+    if (progressCallback) {
+      window.electronAPI.ai.removeModelPullProgressListener(progressCallback)
+      progressCallback = null
+    }
+  }
+
+  async function pullModel(modelName: string): Promise<{ success: boolean; message: string }> {
+    const existingModel = availableModels.value.find(m => m.name === modelName)
+    if (existingModel) {
+      return { success: true, message: '该模型已安装' }
+    }
+    
+    modelPulling.value = true
+    modelPullProgress.value = 0
+    modelPullOutput.value = '正在下载模型...'
+    
+    setupProgressListener()
+    
+    try {
+      const result = await window.electronAPI.ai.pullModel(modelName)
+      if (result.success) {
+        modelPullProgress.value = 100
+        await checkOllama()
+      }
+      return result
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : '模型下载失败'
+      return { success: false, message: errMsg }
+    } finally {
+      modelPulling.value = false
+    }
+  }
+
+  function setupDownloadListener() {
+    if (downloadCallback) return
+    
+    downloadCallback = (_event: unknown, data: { progress: number; message?: string }) => {
+      ollamaDownloadProgress.value = data.progress
+    }
+    window.electronAPI.ai.onDownloadProgress(downloadCallback)
+  }
+
+  function removeDownloadListener() {
+    if (downloadCallback) {
+      window.electronAPI.ai.removeDownloadProgressListener(downloadCallback)
+      downloadCallback = null
+    }
+  }
+
+  async function downloadOllama(): Promise<{ success: boolean; message?: string; filePath?: string }> {
+    ollamaDownloading.value = true
+    ollamaDownloadProgress.value = 0
+    ollamaDownloadedFilePath.value = ''
+    
+    setupDownloadListener()
+    
+    try {
+      const result = await window.electronAPI.ai.downloadOllama(true)
+      
+      if (result.success && result.filePath) {
+        ollamaDownloadedFilePath.value = result.filePath
+      }
+      return result
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : '下载失败'
+      return { success: false, message: errMsg }
+    } finally {
+      ollamaDownloading.value = false
+    }
+  }
+
   return {
     theme,
     fontSize,
@@ -162,6 +260,12 @@ export const useSettingsStore = defineStore('settings', () => {
     aiSettings,
     ollamaConnected,
     availableModels,
+    modelPulling,
+    modelPullProgress,
+    modelPullOutput,
+    ollamaDownloading,
+    ollamaDownloadProgress,
+    ollamaDownloadedFilePath,
     loadSettings,
     saveSetting,
     setTheme,
@@ -175,6 +279,10 @@ export const useSettingsStore = defineStore('settings', () => {
     setAIOllamaUrl,
     setAIModel,
     setAITemperature,
-    setAIMaxTokens
+    setAIMaxTokens,
+    setupProgressListener,
+    pullModel,
+    setupDownloadListener,
+    downloadOllama
   }
 })

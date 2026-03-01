@@ -266,16 +266,18 @@ const checkingOllama = ref(false)
 const ollamaConnected = ref(false)
 const availableModels = ref<{name: string}[]>([])
 const selectedMirror = ref('modelscope')
-const downloading = ref(false)
-const downloadProgress = ref(0)
 const installing = ref(false)
-const downloadedFilePath = ref<string>('')
 const ollamaInstalled = ref(false)
 const ollamaVersion = ref('')
 const ollamaRunning = ref(false)
-const pullingModel = ref(false)
-const pullProgress = ref(0)
-const pullOutput = ref('')
+
+const downloading = computed(() => settingsStore.ollamaDownloading)
+const downloadProgress = computed(() => settingsStore.ollamaDownloadProgress)
+const downloadedFilePath = computed(() => settingsStore.ollamaDownloadedFilePath)
+
+const pullingModel = computed(() => settingsStore.modelPulling)
+const pullProgress = computed(() => settingsStore.modelPullProgress)
+const pullOutput = computed(() => settingsStore.modelPullOutput)
 
 const modelCommand = computed(() => {
   switch (selectedMirror.value) {
@@ -338,11 +340,11 @@ async function handleRecheckOllama() {
     }
 
     if (ollamaConnected.value) {
-      ElMessage.success('Ollama连接成功')
+      // 连接成功，不弹窗打扰用户
     } else if (!installStatus.installed) {
-      ElMessage.warning('未检测到Ollama，请先安装')
+      // 未安装，界面已显示安装引导，不需要额外弹窗
     } else {
-      ElMessage.warning('Ollama已安装但服务未响应')
+      // 已安装但未运行，界面已显示启动按钮
     }
   } finally {
     checkingOllama.value = false
@@ -372,47 +374,28 @@ async function openDownloadPage(useMirror: boolean) {
 }
 
 async function startDownload() {
-  downloading.value = true
-  downloadProgress.value = 0
-  downloadedFilePath.value = ''
-
-  const onProgress = (_event: unknown, data: { progress: number; message?: string }) => {
-    downloadProgress.value = data.progress
-  }
-
-  window.electronAPI.ai.onDownloadProgress(onProgress)
-
-  try {
-    // 使用镜像下载
-    const result = await window.electronAPI.ai.downloadOllama(true)
-
-    if (result.success && result.filePath) {
-      downloadedFilePath.value = result.filePath
-      ElMessage.success(`下载完成，可以开始安装`)
-    } else {
-      ElMessage.info(result.message)
-    }
-  } catch (error) {
-    ElMessage.error('下载失败，请重试')
-  } finally {
-    window.electronAPI.ai.removeDownloadProgressListener(onProgress)
-    downloading.value = false
+  const result = await settingsStore.downloadOllama()
+  
+  if (result.success && result.filePath) {
+    ElMessage.success('下载完成，可以开始安装')
+  } else if (result.message) {
+    ElMessage.info(result.message)
   }
 }
 
 async function installOllama() {
-  if (!downloadedFilePath.value) {
+  const filePath = downloadedFilePath.value
+  if (!filePath) {
     ElMessage.warning('请先下载安装程序')
     return
   }
 
   installing.value = true
   try {
-    const result = await window.electronAPI.ai.installOllama(downloadedFilePath.value)
+    const result = await window.electronAPI.ai.installOllama(filePath)
 
     if (result.success) {
       ElMessage.success('安装成功！请重启应用后使用')
-      downloadedFilePath.value = ''
       // 重新检测
       await handleRecheckOllama()
     } else {
@@ -456,43 +439,16 @@ function copyCommand(command: string) {
 async function pullModel() {
   const modelName = 'huihui_ai/gemma3-abliterated:latest'
   
-  const existingModel = availableModels.value.find(m => m.name === modelName)
-  if (existingModel) {
-    ElMessage.info('该模型已安装')
-    return
-  }
-  
-  pullingModel.value = true
-  pullProgress.value = 0
-  pullOutput.value = '正在下载模型...'
-  
-  const onProgress = (_event: unknown, data: { progress?: number; output?: string; type?: string }) => {
-    if (data.progress !== undefined) {
-      pullProgress.value = data.progress
-    }
-    if (data.output) {
-      pullOutput.value = data.output
-    }
-  }
-  
-  window.electronAPI.ai.onModelPullProgress(onProgress)
-  
-  try {
-    const result = await window.electronAPI.ai.pullModel(modelName)
-    if (result.success) {
-      pullProgress.value = 100
-      ElMessage.success('模型下载完成')
-      await settingsStore.checkOllama()
-      availableModels.value = settingsStore.availableModels
+  const result = await settingsStore.pullModel(modelName)
+  if (result.success) {
+    if (result.message === '该模型已安装') {
+      ElMessage.info(result.message)
     } else {
-      ElMessage.error(result.message || '模型下载失败')
+      ElMessage.success('模型下载完成')
     }
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : '模型下载失败'
-    ElMessage.error(errMsg)
-  } finally {
-    window.electronAPI.ai.removeModelPullProgressListener(onProgress)
-    pullingModel.value = false
+    availableModels.value = settingsStore.availableModels
+  } else {
+    ElMessage.error(result.message || '模型下载失败')
   }
 }
 
@@ -519,6 +475,12 @@ async function clearHistory() {
 onMounted(async () => {
   appVersion.value = await window.electronAPI.app.getVersion()
   await settingsStore.loadSettings()
+  
+  // 如果正在下载模型，恢复进度监听
+  if (settingsStore.modelPulling) {
+    settingsStore.setupProgressListener()
+  }
+  
   theme.value = settingsStore.theme
   fontSize.value = settingsStore.fontSize
   hexagramStyle.value = settingsStore.hexagramStyle
@@ -530,6 +492,16 @@ onMounted(async () => {
   aiModel.value = settingsStore.aiSettings.model
   aiTemperature.value = settingsStore.aiSettings.temperature
   aiMaxTokens.value = settingsStore.aiSettings.maxTokens
+
+  // 如果正在下载 Ollama，恢复进度监听
+  if (settingsStore.ollamaDownloading) {
+    settingsStore.setupDownloadListener()
+  }
+
+  // 如果正在下载模型，恢复进度监听
+  if (settingsStore.modelPulling) {
+    settingsStore.setupProgressListener()
+  }
 
   // 如果 AI 功能开启，主动检查 Ollama 安装和连接状态
   if (aiEnabled.value) {
