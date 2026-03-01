@@ -68,6 +68,14 @@ See [docs/](docs/) for detailed documentation.
 
 ## Changelog
 
+### v1.2.3 (2026-03-01)
+- Refactored AI settings UI with model management section
+- Added model download progress bar with clean output
+- Added domestic mirror sources (ModelScope, HF-Mirror, DaoCloud)
+- Fixed history record detail not displaying
+- Fixed Ollama connection status detection
+- Fixed duplicate toast messages on model download
+
 ### v1.2.2 (2026-02-28)
 - AI interpretation auto-saved to history
 - "AI Interpretation" tag displayed in history list
