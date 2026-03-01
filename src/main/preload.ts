@@ -68,6 +68,10 @@ interface DivinationResult {
 }
 
 const electronAPI = {
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:getVersion')
+  },
+
   window: {
     minimize: () =>
       ipcRenderer.invoke('window:minimize'),

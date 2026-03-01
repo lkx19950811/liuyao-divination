@@ -232,7 +232,7 @@
       </template>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="应用名称">六爻预测</el-descriptions-item>
-        <el-descriptions-item label="版本">1.0.0</el-descriptions-item>
+        <el-descriptions-item label="版本">{{ appVersion }}</el-descriptions-item>
         <el-descriptions-item label="描述">基于传统六爻理论的桌面预测应用</el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -249,6 +249,7 @@ import { useHistoryStore } from '../stores/history'
 const settingsStore = useSettingsStore()
 const historyStore = useHistoryStore()
 
+const appVersion = ref('1.0.0')
 const theme = ref<'light' | 'dark' | 'system'>('system')
 const fontSize = ref<'small' | 'medium' | 'large'>('medium')
 const hexagramStyle = ref<'traditional' | 'modern'>('traditional')
@@ -516,6 +517,7 @@ async function clearHistory() {
 }
 
 onMounted(async () => {
+  appVersion.value = await window.electronAPI.app.getVersion()
   await settingsStore.loadSettings()
   theme.value = settingsStore.theme
   fontSize.value = settingsStore.fontSize

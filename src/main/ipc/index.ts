@@ -187,6 +187,11 @@ function buildAIPrompt(
 }
 
 export function registerIpcHandlers(): void {
+  // App info
+  ipcMain.handle('app:getVersion', () => {
+    return app.getVersion()
+  })
+
   // Window controls
   ipcMain.handle('window:minimize', () => {
     const win = BrowserWindow.getFocusedWindow()

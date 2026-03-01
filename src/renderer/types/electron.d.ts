@@ -11,6 +11,10 @@ import type {
 declare global {
   interface Window {
     electronAPI: {
+      // 应用信息
+      app: {
+        getVersion: () => Promise<string>
+      }
       // 窗口控制
       window: {
         minimize: () => Promise<{ success: boolean }>
