@@ -98,6 +98,8 @@ const electronAPI = {
       ipcRenderer.invoke('divination:number', data),
     coin: (data?: { question?: string }) =>
       ipcRenderer.invoke('divination:coin', data || {}),
+    coinWithData: (data: { coinResults: CoinResult[]; question?: string }) =>
+      ipcRenderer.invoke('divination:coinWithData', data),
     manual: (data: { yaoTypes: YaoType[]; question?: string }) =>
       ipcRenderer.invoke('divination:manual', data)
   },
@@ -244,6 +246,98 @@ const electronAPI = {
     removeModelPullProgressListener: (callback: (_event: unknown, data: { output: string; progress?: number; type: string }) => void) => {
       ipcRenderer.removeListener('ai:modelPullProgress', callback)
     }
+  },
+
+  // 天气相关
+  weather: {
+    getCurrent: () =>
+      ipcRenderer.invoke('weather:getCurrent'),
+    getByCity: (city: string) =>
+      ipcRenderer.invoke('weather:getByCity', city),
+    getCached: () =>
+      ipcRenderer.invoke('weather:getCached'),
+    getHexagramHint: (condition: string) =>
+      ipcRenderer.invoke('weather:getHexagramHint', condition)
+  },
+
+  // AI 角色扮演相关
+  aiRoleplay: {
+    getPersonas: () =>
+      ipcRenderer.invoke('ai:getPersonas'),
+    setPersona: (persona: string) =>
+      ipcRenderer.invoke('ai:setPersona', persona),
+    getCurrentPersona: () =>
+      ipcRenderer.invoke('ai:getCurrentPersona'),
+    createSession: (divinationId: string) =>
+      ipcRenderer.invoke('ai:createSession', divinationId),
+    getSession: (sessionId: string) =>
+      ipcRenderer.invoke('ai:getSession', sessionId),
+    getSessionHistory: (sessionId?: string) =>
+      ipcRenderer.invoke('ai:getSessionHistory', sessionId),
+    deleteSession: (sessionId: string) =>
+      ipcRenderer.invoke('ai:deleteSession', sessionId),
+    chatStream: (
+      data: {
+        sessionId?: string
+        hexagramContext: string
+        message: string
+        settings: {
+          enabled: boolean
+          ollamaUrl: string
+          model: string
+          temperature: number
+          maxTokens: number
+        }
+      },
+      onChunk: (text: string) => void,
+      onEnd: (data: { fullResponse: string }) => void,
+      onError: (error: string) => void
+    ) => {
+      const chunkHandler = (_event: unknown, text: string) => {
+        console.log('[Preload] Received chunk:', text)
+        onChunk(text)
+      }
+      const endHandler = (_event: unknown, data: { fullResponse: string }) => {
+        ipcRenderer.removeListener('ai:chatChunk', chunkHandler)
+        ipcRenderer.removeListener('ai:chatEnd', endHandler)
+        ipcRenderer.removeListener('ai:chatError', errorHandler)
+        onEnd(data)
+      }
+      const errorHandler = (_event: unknown, error: string) => {
+        ipcRenderer.removeListener('ai:chatChunk', chunkHandler)
+        ipcRenderer.removeListener('ai:chatEnd', endHandler)
+        ipcRenderer.removeListener('ai:chatError', errorHandler)
+        onError(error)
+      }
+
+      ipcRenderer.on('ai:chatChunk', chunkHandler)
+      ipcRenderer.on('ai:chatEnd', endHandler)
+      ipcRenderer.on('ai:chatError', errorHandler)
+
+      ipcRenderer.invoke('ai:chatStream', data).catch((err) => {
+        onError(err.message || '未知错误')
+      })
+
+      return () => {
+        ipcRenderer.removeListener('ai:chatChunk', chunkHandler)
+        ipcRenderer.removeListener('ai:chatEnd', endHandler)
+        ipcRenderer.removeListener('ai:chatError', errorHandler)
+      }
+    }
+  },
+
+  // 仪表盘相关
+  dashboard: {
+    getTrend: (startDate?: string, endDate?: string) =>
+      ipcRenderer.invoke('dashboard:getTrend', startDate, endDate),
+    getKeywordCloud: (limit?: number) =>
+      ipcRenderer.invoke('dashboard:getKeywordCloud', limit),
+    getHexagramDistribution: () =>
+      ipcRenderer.invoke('dashboard:getHexagramDistribution'),
+    getCycleReport: () =>
+      ipcRenderer.invoke('dashboard:getCycleReport'),
+    getSummary: () =>
+      ipcRenderer.invoke('dashboard:getSummary')
   }
 }
 

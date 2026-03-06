@@ -10,9 +10,10 @@ A desktop application for Liu Yao (Six Lines) divination prediction based on tra
 
 | Module | Features |
 |--------|----------|
-| Divination | Time-based, Number-based, Coin-tossing, Manual input |
-| Interpretation | Hexagram display, Text interpretation, AI interpretation (optional) |
+| Divination | Time-based, Number-based, Coin-tossing, Manual input, **Physics-based coin toss**, **Environment sensing** |
+| Interpretation | Hexagram display, Text interpretation, AI interpretation (optional), **AI roleplay** |
 | History | Record saving, Search & filter, Export & backup |
+| Dashboard | **Fortune visualization**, **Statistics & charts** |
 | Knowledge Base | 64 Hexagrams guide, Bagua basics, Divination methods |
 | Settings | Theme, Font, AI configuration, Data management |
 
@@ -67,6 +68,14 @@ src/
 See [docs/](docs/) for detailed documentation.
 
 ## Changelog
+
+### v1.3.0 (2026-03-04)
+- Physics-based coin tossing with Matter.js 2D engine
+- Environment-aware divination (weather API integration, ambient audio recommendations)
+- AI roleplay with multiple personas (Sage, Scholar, Master) and multi-turn conversations
+- Fortune visualization dashboard with ECharts charts and statistics
+- Digital talisman wallpaper generator with multiple styles
+- New dev skill for easier development workflow
 
 ### v1.2.4 (2026-03-01)
 - Added restart app feature for Ollama installation detection

@@ -47,3 +47,9 @@ coverage/
 node-v*-win-x64/
 node-v*.zip
 node-v*.msi
+
+# Windows reserved names
+nul
+auto-test.js
+dev.pid
+file-logger.js

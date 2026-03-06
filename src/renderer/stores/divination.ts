@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { DivinationResult, YaoType } from '@shared/types'
+import type { DivinationResult, YaoType, CoinResult } from '@shared/types'
 
 export const useDivinationStore = defineStore('divination', () => {
   const currentResult = ref<DivinationResult | null>(null)
@@ -54,6 +54,21 @@ export const useDivinationStore = defineStore('divination', () => {
     }
   }
 
+  async function coinDivinationWithData(coinResults: CoinResult[], question?: string) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const result = await window.electronAPI.divination.coinWithData({ coinResults, question })
+      currentResult.value = result
+      return result
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : '起卦失败'
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function manualDivination(yaoTypes: YaoType[], question?: string) {
     isLoading.value = true
     error.value = null
@@ -91,6 +106,7 @@ export const useDivinationStore = defineStore('divination', () => {
     timeDivination,
     numberDivination,
     coinDivination,
+    coinDivinationWithData,
     manualDivination,
     saveResult,
     clearResult

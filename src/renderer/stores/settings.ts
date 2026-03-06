@@ -69,9 +69,19 @@ export const useSettingsStore = defineStore('settings', () => {
         aiSettings.value.temperature = parseFloat(settings.aiTemperature)
       }
       if (settings.aiMaxTokens) {
-        aiSettings.value.maxTokens = parseInt(settings.aiMaxTokens)
+        const savedTokens = parseInt(settings.aiMaxTokens)
+        // 如果保存的是旧默认值 1500，自动升级到新默认值 8000
+        if (savedTokens === 1500) {
+          aiSettings.value.maxTokens = 8000
+          await saveSetting('aiMaxTokens', '8000')
+        } else {
+          aiSettings.value.maxTokens = savedTokens
+        }
       }
-      
+      if (settings.aiShowThinking !== undefined) {
+        aiSettings.value.showThinking = settings.aiShowThinking === 'true'
+      }
+
       if (aiSettings.value.enabled) {
         await checkOllama()
       }
@@ -161,6 +171,11 @@ export const useSettingsStore = defineStore('settings', () => {
   async function setAIMaxTokens(value: number) {
     aiSettings.value.maxTokens = value
     await saveSetting('aiMaxTokens', String(value))
+  }
+
+  async function setAIShowThinking(value: boolean) {
+    aiSettings.value.showThinking = value
+    await saveSetting('aiShowThinking', String(value))
   }
 
   function setupProgressListener() {
@@ -273,6 +288,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setAIModel,
     setAITemperature,
     setAIMaxTokens,
+    setAIShowThinking,
     setupProgressListener,
     pullModel,
     setupDownloadListener,

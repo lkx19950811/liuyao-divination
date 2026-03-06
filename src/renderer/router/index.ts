@@ -21,6 +21,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '历史记录' }
   },
   {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('../views/Dashboard.vue'),
+    meta: { title: '运势仪表盘' }
+  },
+  {
+    path: '/talisman',
+    name: 'Talisman',
+    component: () => import('../views/Talisman.vue'),
+    meta: { title: '电子护身符' }
+  },
+  {
     path: '/knowledge',
     name: 'Knowledge',
     component: () => import('../views/Knowledge.vue'),

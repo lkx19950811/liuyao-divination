@@ -97,6 +97,26 @@
           </div>
         </template>
 
+        <!-- 人格选择 - 始终显示，方便用户切换人格重新解读 -->
+        <div class="persona-selector" v-if="settingsStore.ollamaConnected && settingsStore.aiSettings.model && !aiLoading">
+          <div class="persona-label">选择解读风格：</div>
+          <el-radio-group v-model="selectedPersona" size="small">
+            <el-radio-button
+              v-for="persona in personas"
+              :key="persona.id"
+              :value="persona.id"
+            >
+              <span class="persona-option">
+                <span class="persona-avatar">{{ persona.avatar }}</span>
+                <span class="persona-name">{{ persona.name }}</span>
+              </span>
+            </el-radio-button>
+          </el-radio-group>
+          <div class="persona-desc" v-if="currentPersona">
+            {{ currentPersona.description }}
+          </div>
+        </div>
+
         <div v-if="!settingsStore.ollamaConnected" class="ai-not-connected">
           <el-alert type="warning" :closable="false">
             未连接到Ollama服务，请前往设置检查AI配置
@@ -116,6 +136,7 @@
           <AIInterpretation
             :full-text="aiInterpretation"
             :is-generating="aiLoading"
+            :show-thinking="settingsStore.aiSettings.showThinking"
           />
         </div>
 
@@ -174,6 +195,13 @@ import HexagramDisplay from '../components/HexagramDisplay.vue'
 import AIInterpretation from '../components/AIInterpretation.vue'
 import { formatLunarDate as formatLunar } from '@shared/utils/calendar'
 
+interface Persona {
+  id: string
+  name: string
+  description: string
+  avatar: string
+}
+
 const router = useRouter()
 const route = useRoute()
 const divinationStore = useDivinationStore()
@@ -185,6 +213,14 @@ const aiInterpretation = ref('')
 const aiLoading = ref(false)
 const isLoading = ref(false)
 let cancelStream: (() => void) | null = null
+
+// 人格相关
+const personas = ref<Persona[]>([])
+const selectedPersona = ref<string>('mentor')
+
+const currentPersona = computed(() => {
+  return personas.value.find(p => p.id === selectedPersona.value)
+})
 
 const methodLabel = computed(() => {
   const labels: Record<string, string> = {
@@ -214,6 +250,12 @@ function formatLunarDate(lunar: { year: number; month: number; day: number; isLe
 async function generateAIInterpretation() {
   if (!result.value) return
 
+  // 如果正在生成中，防止重复点击
+  if (aiLoading.value) {
+    ElMessage.warning('AI解读正在进行中，请稍候')
+    return
+  }
+
   // Cancel any existing stream
   if (cancelStream) {
     cancelStream()
@@ -230,24 +272,36 @@ async function generateAIInterpretation() {
     // 检查模型是否已选择
     if (!settingsStore.aiSettings.model) {
       ElMessage.warning('请先在设置中选择AI模型')
+      aiLoading.value = false
       return
     }
 
-    // 将 reactive 对象转换为普通对象，以便 IPC 序列化
-    cancelStream = window.electronAPI.ai.generateStream(
+    // 设置当前人格
+    await window.electronAPI.aiRoleplay.setPersona(selectedPersona.value)
+
+    // 构建卦象上下文
+    const hexagramContext = buildHexagramContext()
+
+    // 创建会话
+    const session = await window.electronAPI.aiRoleplay.createSession(result.value.id)
+    console.log('[Result.vue] Created session:', session.id)
+
+    // 使用带人格的对话API
+    cancelStream = window.electronAPI.aiRoleplay.chatStream(
       {
-        settings: JSON.parse(JSON.stringify(settingsStore.aiSettings)),
-        question: result.value.question,
-        originalHexagram: JSON.parse(JSON.stringify(result.value.originalHexagram)),
-        changedHexagram: result.value.changedHexagram ? JSON.parse(JSON.stringify(result.value.changedHexagram)) : null,
-        movingYaoPositions: [...result.value.movingYaoPositions]
+        sessionId: session.id,
+        hexagramContext,
+        message: '请解读这个卦象',
+        settings: JSON.parse(JSON.stringify(settingsStore.aiSettings))
       },
       // onChunk
       (text: string) => {
+        console.log('[Result.vue] Received chunk:', text.substring(0, 50))
         aiInterpretation.value += text
       },
       // onEnd
       async () => {
+        console.log('[Result.vue] Stream ended')
         aiLoading.value = false
         cancelStream = null
         // 保存AI解读到历史记录
@@ -264,6 +318,7 @@ async function generateAIInterpretation() {
       },
       // onError
       (error: string) => {
+        console.error('[Result.vue] Stream error:', error)
         aiLoading.value = false
         cancelStream = null
         ElMessage.error(`AI解读失败: ${error}`)
@@ -275,6 +330,31 @@ async function generateAIInterpretation() {
     ElMessage.error(`AI解读失败: ${errorMsg}`)
     aiLoading.value = false
   }
+}
+
+// 构建卦象上下文
+function buildHexagramContext(): string {
+  if (!result.value) return ''
+
+  let context = `【本卦】${result.value.originalHexagram.name}\n`
+  context += `卦辞：${result.value.originalHexagram.guaci}\n`
+  context += `彖辞：${result.value.originalHexagram.tuanci}\n`
+  context += `象辞：${result.value.originalHexagram.xiangci}\n`
+
+  if (result.value.changedHexagram) {
+    context += `\n【变卦】${result.value.changedHexagram.name}\n`
+    context += `卦辞：${result.value.changedHexagram.guaci}\n`
+  }
+
+  if (result.value.movingYaoPositions.length > 0) {
+    context += `\n【动爻】第 ${result.value.movingYaoPositions.join('、')} 爻\n`
+  }
+
+  if (result.value.question) {
+    context += `\n【预测问题】${result.value.question}\n`
+  }
+
+  return context
 }
 
 async function saveRemark() {
@@ -378,6 +458,15 @@ onMounted(async () => {
   await settingsStore.loadSettings()
   if (settingsStore.aiSettings.enabled) {
     await settingsStore.checkOllama()
+    // 加载人格列表
+    try {
+      personas.value = await window.electronAPI.aiRoleplay.getPersonas()
+      // 获取当前人格
+      const currentP = await window.electronAPI.aiRoleplay.getCurrentPersona()
+      selectedPersona.value = currentP || 'mentor'
+    } catch (e) {
+      console.error('Failed to load personas:', e)
+    }
   }
 
   const id = route.params.id as string
@@ -486,5 +575,41 @@ watch(() => route.params.id, async (newId) => {
 
 .ai-content p {
   margin: 0;
+}
+
+.persona-selector {
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+
+.persona-label {
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 12px;
+}
+
+.persona-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.persona-avatar {
+  font-size: 16px;
+}
+
+.persona-name {
+  font-size: 12px;
+}
+
+.persona-desc {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  padding: 8px 12px;
+  background: var(--el-bg-color);
+  border-radius: 4px;
 }
 </style>

@@ -7,7 +7,7 @@ import { exec, spawn, execSync } from 'child_process'
 import { promisify } from 'util'
 
 const execAsync = promisify(exec)
-import type { YaoType, DivinationResult, Hexagram, AISettings } from '../../shared/types'
+import type { YaoType, DivinationResult, Hexagram, AISettings, CoinResult } from '../../shared/types'
 import {
   timeDivination,
   numberDivination,
@@ -36,6 +36,16 @@ import {
   getAllSettings
 } from '../database'
 import { getHexagramById } from '../../shared/data/hexagrams'
+import { weatherService, WEATHER_HEXAGRAM_MAP } from '../services/WeatherService'
+import { sessionManager } from '../ai/SessionManager'
+import {
+  analyzeTrend,
+  analyzeHexagramDistribution,
+  extractKeywords,
+  generateCycleReport,
+  analyzeFortuneScore,
+  getFortuneLevel
+} from '../services/DashboardService'
 
 async function checkOllamaConnection(url: string): Promise<boolean> {
   try {
@@ -146,6 +156,11 @@ function buildAIPrompt(
   const palaceText = originalHexagram.palace ? `\n【所属宫】${originalHexagram.palace}` : ''
 
   return `你是一位精通六爻预测的易学大师，请根据以下卦象信息，为用户提供详细、具体的解读。
+
+【重要要求】
+1. 必须使用中文回答，禁止使用英文
+2. 直接给出解读结果，不要输出思考过程
+3. 不要使用[思考]、<think\>等标签
 
 【用户问题】${question || '用户未提供具体问题，请给出一般性解读'}
 
@@ -287,24 +302,63 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('divination:coin', async (_event, data: { question?: string }) => {
     const { question } = data
-    
+
     const { yaos, coinResults } = coinDivination()
     const originalHexagram = buildHexagramFromTrigrams(
       yaosToTrigramName(yaos.slice(3, 6)),
       yaosToTrigramName(yaos.slice(0, 3))
     )
-    
+
     if (!originalHexagram) {
       throw new Error('无法生成卦象')
     }
-    
+
     const movingYaoPositions = yaos.filter(y => y.isMoving).map(y => y.position)
-    
+
     const result = buildDivinationResult('coin', originalHexagram, movingYaoPositions, {
       question: question ?? undefined,
       coinResults
     })
-    
+
+    return result
+  })
+
+  ipcMain.handle('divination:coinWithData', async (_event, data: {
+    coinResults: CoinResult[]
+    question?: string
+  }) => {
+    const { coinResults, question } = data
+
+    // 根据传入的铜钱结果构建爻
+    const yaos = coinResults.map(cr => {
+      const frontCount = cr.coins.filter(c => c === 'front').length
+      let yaoType: YaoType
+      switch (frontCount) {
+        case 3: yaoType = 'oldYang'; break
+        case 2: yaoType = 'yang'; break
+        case 1: yaoType = 'yin'; break
+        case 0: yaoType = 'oldYin'; break
+        default: yaoType = 'yang'
+      }
+      return { type: yaoType, position: cr.position, isMoving: yaoType === 'oldYang' || yaoType === 'oldYin' }
+    })
+
+    const originalHexagram = buildHexagramFromTrigrams(
+      yaosToTrigramName(yaos.slice(3, 6)),
+      yaosToTrigramName(yaos.slice(0, 3))
+    )
+
+    if (!originalHexagram) {
+      throw new Error('无法生成卦象')
+    }
+
+    const movingYaoPositions = yaos.filter(y => y.isMoving).map(y => y.position)
+
+    const result = buildDivinationResult('coin', originalHexagram, movingYaoPositions, {
+      question: question ?? undefined,
+      coinResults
+    })
+
     return result
   })
 
@@ -716,6 +770,7 @@ export function registerIpcHandlers(): void {
           model: settings.model,
           prompt,
           stream: true,
+          think: false,
           options: {
             temperature: settings.temperature,
             num_predict: settings.maxTokens
@@ -805,6 +860,7 @@ export function registerIpcHandlers(): void {
           model: settings.model,
           prompt,
           stream: false,
+          think: false,
           options: {
             temperature: settings.temperature,
             num_predict: settings.maxTokens
@@ -836,7 +892,7 @@ export function registerIpcHandlers(): void {
 
     // 国内镜像源 - 使用最新版本
     const mirrors = [
-      'https://gh-proxy.com/https://github.com/ollama/ollama/releases/download/v0.17.4/OllamaSetup.exe'
+      'https://gh-proxy.com/https://github.com/ollama/ollama/releases/download/v0.17.5/OllamaSetup.exe'
     ]
 
     const { filePath, canceled } = await dialog.showSaveDialog(mainWindow!, {
@@ -853,7 +909,7 @@ export function registerIpcHandlers(): void {
     }
 
     // 选择下载源 - 官方也使用具体版本
-    const downloadUrls = useMirror ? mirrors : ['https://github.com/ollama/ollama/releases/download/v0.17.4/OllamaSetup.exe']
+    const downloadUrls = useMirror ? mirrors : ['https://github.com/ollama/ollama/releases/download/v0.17.5/OllamaSetup.exe']
 
     return new Promise((resolve) => {
       let currentIndex = 0
@@ -1002,13 +1058,19 @@ export function registerIpcHandlers(): void {
       let mirrorLabel = ''
 
       if (mirrorUrl === 'modelscope') {
-        // 魔塔社区镜像 - 格式: modelscope.cn/{命名空间}/{模型名}
-        // 例如: modelscope.cn/Qwen/Qwen2.5-7B-Instruct-GGUF
-        actualModelName = `modelscope.cn/${modelName}`
+        // 魔塔社区镜像
+        // qwen3.5 系列模型在 modelscope 的路径
+        if (modelName.startsWith('qwen3.5')) {
+          actualModelName = `modelscope.cn/qwen/${modelName}`
+        } else if (modelName.startsWith('qwen')) {
+          actualModelName = `modelscope.cn/qwen/${modelName}`
+        } else {
+          actualModelName = `modelscope.cn/library/${modelName}`
+        }
         mirrorLabel = '魔塔社区镜像'
       } else if (mirrorUrl === 'daocloud') {
-        // DaoCloud 镜像 - 直接在模型名前加前缀
-        actualModelName = `ollama.m.daocloud.io/${modelName}`
+        // DaoCloud 镜像
+        actualModelName = `ollama.m.daocloud.io/library/${modelName}`
         mirrorLabel = 'DaoCloud镜像'
       } else if (mirrorUrl && mirrorUrl !== '') {
         // 自定义镜像
@@ -1121,6 +1183,330 @@ export function registerIpcHandlers(): void {
         resolve({ success: false, message: `下载失败: ${err.message}` })
       })
     })
+  })
+
+  // 天气相关
+  ipcMain.handle('weather:getCurrent', async () => {
+    return weatherService.getCurrentWeather()
+  })
+
+  ipcMain.handle('weather:getByCity', async (_event, city: string) => {
+    return weatherService.getWeatherByCity(city)
+  })
+
+  ipcMain.handle('weather:getCached', async () => {
+    return weatherService.getCachedWeather()
+  })
+
+  ipcMain.handle('weather:getHexagramHint', async (_event, condition: string) => {
+    return WEATHER_HEXAGRAM_MAP[condition as keyof typeof WEATHER_HEXAGRAM_MAP] || null
+  })
+
+  // AI 角色扮演相关
+  ipcMain.handle('ai:getPersonas', async () => {
+    return sessionManager.getPersonas()
+  })
+
+  ipcMain.handle('ai:setPersona', async (_event, persona: string) => {
+    sessionManager.setPersona(persona as 'scholar' | 'mentor' | 'mystic')
+    return { success: true }
+  })
+
+  ipcMain.handle('ai:getCurrentPersona', async () => {
+    return sessionManager.getCurrentPersona()
+  })
+
+  ipcMain.handle('ai:createSession', async (_event, divinationId: string) => {
+    return sessionManager.createSession(divinationId)
+  })
+
+  ipcMain.handle('ai:getSession', async (_event, sessionId: string) => {
+    return sessionManager.getSession(sessionId)
+  })
+
+  ipcMain.handle('ai:getSessionHistory', async (_event, sessionId?: string) => {
+    return sessionManager.getSessionHistory(sessionId)
+  })
+
+  ipcMain.handle('ai:deleteSession', async (_event, sessionId: string) => {
+    return sessionManager.deleteSession(sessionId)
+  })
+
+  // AI 多轮对话（流式）
+  ipcMain.handle('ai:chatStream', async (event, data: {
+    sessionId?: string
+    hexagramContext: string
+    message: string
+    settings: AISettings
+  }) => {
+    console.log('[IPC ai:chatStream] Received request:', { sessionId: data.sessionId, message: data.message })
+    const { sessionId, hexagramContext, message, settings } = data
+
+    // 保存 sender 引用，避免异步操作期间失效
+    const sender = event.sender
+
+    // 获取或创建会话
+    let session = sessionId ? sessionManager.getSession(sessionId) : null
+    if (!session) {
+      console.error('[IPC ai:chatStream] Session not found:', sessionId)
+      throw new Error('Session not found')
+    }
+    console.log('[IPC ai:chatStream] Session found:', session.id)
+
+    // 添加用户消息
+    sessionManager.addMessage(message, 'user')
+
+    // 构建 Prompt
+    let prompt = sessionManager.buildPrompt(hexagramContext, message, session)
+
+    // 如果关闭思考过程显示，添加明确指令禁用思考标签
+    if (settings.showThinking === false) {
+      prompt += '\n\n【重要指令】请直接给出最终答案，不要输出思考过程，不要使用[思考]标签，必须用中文回答。'
+    } else {
+      prompt += '\n\n【重要指令】必须用中文回答，禁止使用英文。思考过程请控制在100字以内，简要列出关键分析点即可。'
+    }
+
+    console.log('[IPC ai:chatStream] Sending request to Ollama:', settings.ollamaUrl, 'model:', settings.model)
+
+    try {
+      const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: settings.model,
+          prompt,
+          stream: true,
+          think: false,
+          options: {
+            temperature: settings.temperature,
+            num_predict: settings.maxTokens
+          }
+        }),
+        signal: AbortSignal.timeout(180000)
+      })
+
+      console.log('[IPC ai:chatStream] Ollama response status:', response.status)
+
+      if (!response.ok) {
+        throw new Error(`Ollama request failed: ${response.status}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('Cannot read response stream')
+      }
+
+      console.log('[IPC ai:chatStream] Starting to read stream...')
+
+      const decoder = new TextDecoder()
+      let fullResponse = ''
+      let thinkingContent = ''
+      let isInThinkingPhase = true
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          console.log('[IPC ai:chatStream] Stream done, full response length:', fullResponse.length)
+          // 保存 AI 回复
+          sessionManager.addMessage(fullResponse, 'assistant')
+          if (sender && !sender.isDestroyed()) {
+            sender.send('ai:chatEnd', { fullResponse })
+          } else {
+            console.error('[IPC ai:chatStream] Sender is destroyed, cannot send end event')
+          }
+          break
+        }
+
+        const chunk = decoder.decode(value, { stream: true })
+        console.log('[IPC ai:chatStream] Raw chunk:', chunk)
+        const lines = chunk.split('\n').filter(line => line.trim())
+
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line)
+            console.log('[IPC ai:chatStream] Parsed JSON:', json)
+
+            // Qwen 模型：thinking 字段是思考过程，response 字段是正文
+            // 其他模型：response 字段包含所有内容（可能带有 <think> 标签）
+            let contentToSend = ''
+
+            if (json.thinking && json.thinking !== 'Wei') {
+              // 这是思考过程（Qwen 模型）
+              thinkingContent += json.thinking
+              // 将思考内容包装成 [思考] 标签格式
+              if (thinkingContent.length === json.thinking.length) {
+                // 第一次收到思考内容，添加开始标签
+                contentToSend = `[思考]${json.thinking}`
+              } else {
+                contentToSend = json.thinking
+              }
+            } else if (json.response) {
+              // 这是正文内容
+              if (isInThinkingPhase && thinkingContent) {
+                // 第一次收到正文，说明思考过程结束，需要闭合思考标签
+                isInThinkingPhase = false
+                contentToSend = `[/思考]${json.response}`
+              } else {
+                contentToSend = json.response
+              }
+            } else if (json.message?.content) {
+              // /api/chat 格式
+              contentToSend = json.message.content
+            }
+
+            if (contentToSend) {
+              fullResponse += contentToSend
+              console.log('[IPC ai:chatStream] Sending chunk to renderer:', contentToSend.substring(0, 50))
+              if (sender && !sender.isDestroyed()) {
+                sender.send('ai:chatChunk', contentToSend)
+              } else {
+                console.error('[IPC ai:chatStream] Sender is destroyed, cannot send chunk')
+              }
+            }
+
+            // Check if stream is done
+            if (json.done) {
+              console.log('[IPC ai:chatStream] Done signal received in JSON')
+            }
+          } catch (e) {
+            console.log('[IPC ai:chatStream] Parse error for line:', line, e)
+          }
+        }
+      }
+
+      console.log('[IPC ai:chatStream] Returning success')
+      return { success: true, sessionId: session.id }
+    } catch (error) {
+      console.error('[IPC ai:chatStream] Error:', error)
+      if (sender && !sender.isDestroyed()) {
+        sender.send('ai:chatError', error instanceof Error ? error.message : 'Unknown error')
+      }
+      throw error
+    }
+  })
+
+  // 仪表盘相关
+  ipcMain.handle('dashboard:getTrend', async (_event, startDate?: string, endDate?: string) => {
+    const records = getHistoryList({ limit: 10000 }) as Array<{
+      createdAt: string
+      aiInterpretation: string | null
+    }>
+
+    let filtered = records
+    if (startDate) {
+      filtered = filtered.filter(r => r.createdAt >= startDate!)
+    }
+    if (endDate) {
+      filtered = filtered.filter(r => r.createdAt <= endDate!)
+    }
+
+    return analyzeTrend(filtered.map(r => ({
+      createdAt: r.createdAt,
+      aiInterpretation: r.aiInterpretation
+    })))
+  })
+
+  ipcMain.handle('dashboard:getKeywordCloud', async (_event, limit?: number) => {
+    const records = getHistoryList({ limit: 1000 }) as Array<{
+      aiInterpretation: string | null
+    }>
+
+    const texts = records
+      .filter(r => r.aiInterpretation)
+      .map(r => r.aiInterpretation!)
+
+    return extractKeywords(texts, limit || 30)
+  })
+
+  ipcMain.handle('dashboard:getHexagramDistribution', async () => {
+    const records = getHistoryList({ limit: 10000 }) as Array<{
+      originalHexagramId: number
+    }>
+
+    const hexagrams = getAllHexagrams()
+    return analyzeHexagramDistribution(records, hexagrams)
+  })
+
+  ipcMain.handle('dashboard:getCycleReport', async () => {
+    const records = getHistoryList({ limit: 10000 }) as Array<{
+      createdAt: string
+      aiInterpretation: string | null
+    }>
+
+    const trendData = analyzeTrend(records.map(r => ({
+      createdAt: r.createdAt,
+      aiInterpretation: r.aiInterpretation
+    })))
+
+    return generateCycleReport(records, trendData)
+  })
+
+  ipcMain.handle('dashboard:getSummary', async () => {
+    const records = getHistoryList({ limit: 10000 }) as Array<{
+      createdAt: string
+      originalHexagramId: number
+      aiInterpretation: string | null
+    }>
+
+    const totalRecords = records.length
+
+    // 统计吉凶
+    let luckyCount = 0
+    let unluckyCount = 0
+    let neutralCount = 0
+
+    records.forEach(r => {
+      if (r.aiInterpretation) {
+        const score = analyzeFortuneScore(r.aiInterpretation)
+        const level = getFortuneLevel(score)
+        if (level === '吉') luckyCount++
+        else if (level === '凶') unluckyCount++
+        else neutralCount++
+      }
+    })
+
+    // 最常见的卦
+    const hexagramCounts: Record<number, number> = {}
+    records.forEach(r => {
+      hexagramCounts[r.originalHexagramId] = (hexagramCounts[r.originalHexagramId] || 0) + 1
+    })
+
+    let mostFrequentHexagramId = 0
+    let maxCount = 0
+    Object.entries(hexagramCounts).forEach(([id, count]) => {
+      if (count > maxCount) {
+        maxCount = count
+        mostFrequentHexagramId = parseInt(id)
+      }
+    })
+
+    const hexagram = getHexagramById(mostFrequentHexagramId)
+
+    // 近期趋势
+    const recentRecords = records.slice(0, Math.min(10, records.length))
+    const recentScores = recentRecords
+      .filter(r => r.aiInterpretation)
+      .map(r => analyzeFortuneScore(r.aiInterpretation!))
+
+    let recentTrend: 'up' | 'down' | 'stable' = 'stable'
+    if (recentScores.length >= 3) {
+      const firstHalf = recentScores.slice(0, Math.floor(recentScores.length / 2))
+      const secondHalf = recentScores.slice(Math.floor(recentScores.length / 2))
+      const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
+      const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+
+      if (secondAvg - firstAvg > 10) recentTrend = 'up'
+      else if (firstAvg - secondAvg > 10) recentTrend = 'down'
+    }
+
+    return {
+      totalRecords,
+      luckyCount,
+      unluckyCount,
+      neutralCount,
+      mostFrequentHexagram: hexagram?.name || '无',
+      recentTrend
+    }
   })
 }
 

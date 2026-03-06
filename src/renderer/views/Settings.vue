@@ -159,45 +159,62 @@
               </div>
               
               <div class="model-download-section">
-                <div class="model-list-header">下载新模型：</div>
                 <div v-if="!ollamaRunning" class="service-warning">
                   <el-icon><WarningFilled /></el-icon>
                   <span>请先启动 Ollama 服务后再下载模型</span>
                 </div>
-                <div class="model-download-actions">
-                  <el-select v-model="selectedPullMirror" placeholder="选择镜像源" style="width: 150px;">
-                    <el-option label="魔塔社区（推荐）" value="modelscope" />
-                    <el-option label="官方源" value="" />
-                  </el-select>
-                  <el-button type="primary" @click="pullModel" :loading="pullingModel" :disabled="!ollamaRunning">
-                    一键下载推荐模型
-                  </el-button>
-                  <span class="model-hint">推荐：huihui_ai/gemma3-abliterated:latest</span>
-                </div>
-                <div v-if="pullingModel" class="pull-progress">
-                  <el-progress 
-                    :percentage="pullProgress" 
-                    :status="pullProgress === 100 ? 'success' : ''"
-                    :indeterminate="pullProgress === 0"
-                  />
-                  <div class="pull-output" v-if="pullOutput">{{ pullOutput }}</div>
-                </div>
-                
-                <div class="manual-download">
-                  <div class="manual-download-title">下载其他模型：</div>
-                  <div class="manual-download-row">
-                    <el-select v-model="selectedMirror" placeholder="选择镜像源" style="width: 180px;">
+                <template v-else>
+                  <div class="quick-download">
+                    <el-button type="primary" @click="pullModel" :loading="pullingModel">
+                      一键下载推荐模型
+                    </el-button>
+                    <div class="quick-download-info">
+                      <span class="model-name">qwen3.5:9b</span>
+                      <span class="model-desc">性能均衡，适合解卦</span>
+                    </div>
+                    <el-select v-model="selectedPullMirror" placeholder="镜像源" size="small" style="width: 130px;">
                       <el-option label="魔塔社区（推荐）" value="modelscope" />
-                      <el-option label="HF国内镜像" value="hf-mirror" />
-                      <el-option label="DaoCloud镜像" value="daocloud" />
-                      <el-option label="默认（国外）" value="" />
+                      <el-option label="官方源" value="" />
+                    </el-select>
+                  </div>
+                  <div class="model-tip">
+                    <el-icon><InfoFilled /></el-icon>
+                    <span>推荐模型需要 Ollama v0.17.5+</span>
+                  </div>
+                  <div v-if="pullingModel" class="pull-progress">
+                    <el-progress 
+                      :percentage="pullProgress" 
+                      :status="pullProgress === 100 ? 'success' : ''"
+                      :indeterminate="pullProgress === 0"
+                    />
+                    <div class="pull-output" v-if="pullOutput">{{ pullOutput }}</div>
+                  </div>
+                </template>
+                
+                <el-divider content-position="left">其他模型</el-divider>
+                <div class="manual-download">
+                  <div class="manual-download-row">
+                    <el-select v-model="selectedOtherModel" placeholder="选择模型" style="width: 180px;">
+                      <el-option label="Qwen 2.5 (7B)" value="qwen2.5" />
+                      <el-option label="Qwen 2.5 (14B)" value="qwen2.5:14b" />
+                      <el-option label="Llama 3.2" value="llama3.2" />
+                      <el-option label="DeepSeek-R1 (7B)" value="deepseek-r1:7b" />
                     </el-select>
                     <code class="command-code">{{ modelCommand }}</code>
                     <el-button type="success" size="small" @click="copyCommand(modelCommand)">
-                      复制命令
+                      复制
                     </el-button>
                   </div>
-                  <div class="form-hint">复制命令后在终端执行</div>
+                  <div class="mirror-select-row">
+                    <span class="mirror-label">镜像：</span>
+                    <el-select v-model="selectedMirror" size="small" style="width: 120px;">
+                      <el-option label="魔塔社区" value="modelscope" />
+                      <el-option label="HF镜像" value="hf-mirror" />
+                      <el-option label="DaoCloud" value="daocloud" />
+                      <el-option label="官方源" value="" />
+                    </el-select>
+                    <span class="mirror-hint">{{ getMirrorHint(selectedMirror) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -218,9 +235,13 @@
           </el-form-item>
           <el-form-item label="最大字数">
             <div class="slider-row">
-              <el-slider v-model="aiMaxTokens" :min="500" :max="2000" :step="100" @change="handleAIMaxTokensChange" class="slider-input" />
+              <el-slider v-model="aiMaxTokens" :min="500" :max="20000" :step="100" @change="handleAIMaxTokensChange" class="slider-input" />
               <span class="slider-value">{{ aiMaxTokens }}</span>
             </div>
+          </el-form-item>
+          <el-form-item label="显示思考过程">
+            <el-switch v-model="aiShowThinking" @change="handleAIShowThinkingChange" />
+            <span class="setting-hint">关闭后将隐藏AI的深度思考过程，直接显示解读结果</span>
           </el-form-item>
         </el-form>
       </div>
@@ -271,13 +292,15 @@ const aiEnabled = ref(false)
 const aiOllamaUrl = ref('http://localhost:11434')
 const aiModel = ref('')
 const aiTemperature = ref(0.7)
-const aiMaxTokens = ref(1500)
+const aiMaxTokens = ref(16000)
+const aiShowThinking = ref(true)
 const checkingOllama = ref(false)
 
 const ollamaConnected = ref(false)
 const availableModels = ref<{name: string}[]>([])
 const selectedMirror = ref('modelscope')
-const selectedPullMirror = ref('modelscope')
+const selectedPullMirror = ref('')
+const selectedOtherModel = ref('qwen2.5')
 const installing = ref(false)
 const ollamaInstalled = ref(false)
 const ollamaVersion = ref('')
@@ -292,16 +315,39 @@ const pullProgress = computed(() => settingsStore.modelPullProgress)
 const pullOutput = computed(() => settingsStore.modelPullOutput)
 
 const modelCommand = computed(() => {
-  switch (selectedMirror.value) {
-    case 'modelscope':
-      return 'ollama run modelscope.cn/unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF:DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf'
-    case 'hf-mirror':
-      return 'ollama run hf-mirror.com/unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q4_K_M'
-    case 'daocloud':
-      return 'ollama run ollama.m.daocloud.io/library/qwen2.5:7b'
-    default:
-      return 'ollama pull huihui_ai/gemma3-abliterated:latest'
+  // 模型在不同镜像源的路径映射
+  const modelPaths: Record<string, Record<string, string>> = {
+    'qwen2.5': {
+      'modelscope': 'modelscope.cn/qwen/qwen2.5:latest',
+      'hf-mirror': 'hf-mirror.com/unsloth/Qwen2.5-7B-Instruct-GGUF:Q4_K_M',
+      'daocloud': 'ollama.m.daocloud.io/library/qwen2.5:7b',
+      '': 'qwen2.5:latest'
+    },
+    'qwen2.5:14b': {
+      'modelscope': 'modelscope.cn/qwen/qwen2.5:14b',
+      'daocloud': 'ollama.m.daocloud.io/library/qwen2.5:14b',
+      '': 'qwen2.5:14b'
+    },
+    'llama3.2': {
+      'modelscope': 'modelscope.cn/llama3/llama3.2:latest',
+      'daocloud': 'ollama.m.daocloud.io/library/llama3.2:latest',
+      '': 'llama3.2:latest'
+    },
+    'deepseek-r1:7b': {
+      'modelscope': 'modelscope.cn/unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF:DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf',
+      'hf-mirror': 'hf-mirror.com/unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q4_K_M',
+      '': 'deepseek-r1:7b'
+    },
+    'gemma3:4b': {
+      'modelscope': 'modelscope.cn/google/gemma3:4b',
+      '': 'gemma3:4b'
+    }
   }
+
+  const model = selectedOtherModel.value
+  const mirror = selectedMirror.value
+  const path = modelPaths[model]?.[mirror] || modelPaths[model]?.[''] || model
+  return `ollama pull ${path}`
 })
 
 async function handleThemeChange(value: 'light' | 'dark' | 'system') {
@@ -379,6 +425,10 @@ async function handleAITemperatureChange(value: number) {
 
 async function handleAIMaxTokensChange(value: number) {
   await settingsStore.setAIMaxTokens(value)
+}
+
+async function handleAIShowThinkingChange(value: boolean) {
+  await settingsStore.setAIShowThinking(value)
 }
 
 async function openDownloadPage(useMirror: boolean) {
@@ -463,6 +513,19 @@ async function stopOllamaService() {
   }
 }
 
+function getMirrorHint(mirror: string): string {
+  switch (mirror) {
+    case 'modelscope':
+      return '国内推荐，速度快'
+    case 'hf-mirror':
+      return 'HuggingFace 国内镜像'
+    case 'daocloud':
+      return 'DaoCloud 国内镜像'
+    default:
+      return '官方源，国外访问'
+  }
+}
+
 function copyCommand(command: string) {
   navigator.clipboard.writeText(command).then(() => {
     ElMessage.success('命令已复制到剪贴板')
@@ -478,7 +541,22 @@ async function pullModel() {
     return
   }
 
-  const modelName = 'huihui_ai/gemma3-abliterated:latest'
+  // 检查 Ollama 版本（qwen3.5:9b 需要 v0.17.5+）
+  if (ollamaVersion.value) {
+    const versionMatch = ollamaVersion.value.match(/(\d+)\.(\d+)\.(\d+)/)
+    if (versionMatch) {
+      const major = parseInt(versionMatch[1])
+      const minor = parseInt(versionMatch[2])
+      const patch = parseInt(versionMatch[3])
+      // 检查是否 < 0.17.5
+      if (major < 0 || (major === 0 && minor < 17) || (major === 0 && minor === 17 && patch < 5)) {
+        ElMessage.warning(`当前 Ollama 版本 ${ollamaVersion.value} 过低，qwen3.5:4b 需要 v0.17.5 或更高版本，请先升级 Ollama`)
+        return
+      }
+    }
+  }
+
+  const modelName = 'qwen3.5:9b'
   const mirrorUrl = selectedPullMirror.value || undefined
 
   const result = await settingsStore.pullModel(modelName, mirrorUrl)
@@ -534,6 +612,7 @@ onMounted(async () => {
   aiModel.value = settingsStore.aiSettings.model
   aiTemperature.value = settingsStore.aiSettings.temperature
   aiMaxTokens.value = settingsStore.aiSettings.maxTokens
+  aiShowThinking.value = settingsStore.aiSettings.showThinking
 
   // 如果正在下载 Ollama，恢复进度监听
   if (settingsStore.ollamaDownloading) {
@@ -768,28 +847,47 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 12px;
   background: var(--el-color-warning-light-9);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--el-color-warning);
   font-size: 13px;
-  margin-bottom: 12px;
 }
 
-.model-download-actions {
+.quick-download {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.model-hint {
+.quick-download-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quick-download-info .model-name {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.quick-download-info .model-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.model-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
 .pull-progress {
-  margin-bottom: 12px;
+  margin-top: 12px;
 }
 
 .pull-output {
@@ -805,15 +903,7 @@ onMounted(async () => {
 }
 
 .manual-download {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.manual-download-title {
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-  margin-bottom: 8px;
+  margin-top: 8px;
 }
 
 .manual-download-row {
@@ -821,6 +911,25 @@ onMounted(async () => {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.mirror-select-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.mirror-label {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.mirror-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .guide-title {

@@ -5,7 +5,8 @@ const DEFAULT_SETTINGS: AISettings = {
   ollamaUrl: 'http://localhost:11434',
   model: '',
   temperature: 0.7,
-  maxTokens: 1500
+  maxTokens: 16000,
+  showThinking: true
 }
 
 export function getDefaultAISettings(): AISettings {
@@ -62,12 +63,12 @@ function buildPrompt(
 【变卦】${changedHexagramText}
 【动爻】${movingYaoText}
 
-请从以下角度解读：
-1. 这个卦象整体意味着什么？
-2. 针对用户的问题，有什么具体启示？
-3. 有什么建议和注意事项？
+请从以下角度详细解读：
+1. 这个卦象整体意味着什么？（详细分析卦辞、彖辞、象辞的含义）
+2. 针对用户的问题，有什么具体启示？（结合变卦、动爻深入分析）
+3. 有什么建议和注意事项？（给出具体、可操作的建议）
 
-请用白话文回答，避免使用专业术语，让普通人也能理解。回答控制在500字以内。`
+请用白话文回答，避免过于晦涩的专业术语，让普通人也能理解。解读要全面、深入，不要拘泥于字数限制，把该说的都说清楚。`
 }
 
 export async function generateAIInterpretation(

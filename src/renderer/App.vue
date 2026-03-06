@@ -24,6 +24,14 @@
               <el-icon><Clock /></el-icon>
               <span>历史记录</span>
             </el-menu-item>
+            <el-menu-item index="/dashboard">
+              <el-icon><TrendCharts /></el-icon>
+              <span>运势仪表盘</span>
+            </el-menu-item>
+            <el-menu-item index="/talisman">
+              <el-icon><MagicStick /></el-icon>
+              <span>电子护身符</span>
+            </el-menu-item>
             <el-menu-item index="/knowledge">
               <el-icon><Reading /></el-icon>
               <span>知识库</span>

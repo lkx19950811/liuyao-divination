@@ -131,6 +131,7 @@ export interface AISettings {
   model: string
   temperature: number
   maxTokens: number
+  showThinking: boolean
 }
 
 export interface OllamaModel {
