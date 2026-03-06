@@ -48,7 +48,7 @@ npm run build:win
 
 This app supports local AI interpretation based on Ollama:
 
-1. Install [Ollama](https://ollama.ai) (version 0.6+ required)
+1. Install [Ollama](https://ollama.ai) (Ollama v0.17.5+ required)
 2. Run `ollama pull huihui_ai/gemma3-abliterated:latest`
 3. Enable AI feature in Settings and select model
 
